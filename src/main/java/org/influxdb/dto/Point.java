@@ -6,7 +6,6 @@ import java.text.NumberFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
@@ -28,10 +27,7 @@ public class Point {
   private TimeUnit precision = TimeUnit.NANOSECONDS;
   private Map<String, Object> fields;
 
-  private static final Escaper FIELD_ESCAPER = Escapers.builder()
-                                                      .addEscape('\\', "\\\\")
-                                                      .addEscape('"', "\\\"")
-                                                      .build();
+  private static final Escaper FIELD_ESCAPER = Escapers.builder().addEscape('"', "\\\"").build();
   private static final Escaper KEY_ESCAPER = Escapers.builder()
                                                      .addEscape(' ', "\\ ")
                                                      .addEscape(',', "\\,")
@@ -86,9 +82,7 @@ public class Point {
     public Builder tag(final String tagName, final String value) {
       Preconditions.checkArgument(tagName != null);
       Preconditions.checkArgument(value != null);
-      if (!tagName.isEmpty() && !value.isEmpty()) {
-        tags.put(tagName, value);
-      }
+      tags.put(tagName, value);
       return this;
     }
 
@@ -230,6 +224,14 @@ public class Point {
     this.measurement = measurement;
   }
 
+  public String getMeasurement() {
+    return measurement;
+  }
+
+  public Map<String, Object> getFields() {
+    return fields;
+  }
+
   /**
    * @param time
    *            the time to set
@@ -249,7 +251,7 @@ public class Point {
   /**
    * @return the tags
    */
-  Map<String, String> getTags() {
+  public Map<String, String> getTags() {
     return this.tags;
   }
 
@@ -267,27 +269,6 @@ public class Point {
    */
   void setFields(final Map<String, Object> fields) {
     this.fields = fields;
-  }
-
-  @Override
-  public boolean equals(final Object o) {
-    if (this == o) {
-      return true;
-    }
-    if (o == null || getClass() != o.getClass()) {
-      return false;
-    }
-    Point point = (Point) o;
-    return Objects.equals(measurement, point.measurement)
-            && Objects.equals(tags, point.tags)
-            && Objects.equals(time, point.time)
-            && precision == point.precision
-            && Objects.equals(fields, point.fields);
-  }
-
-  @Override
-  public int hashCode() {
-    return Objects.hash(measurement, tags, time, precision, fields);
   }
 
   /**

@@ -1,16 +1,16 @@
 package org.influxdb;
 
+//import java.util.Date;
+import java.util.List;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+
 import org.influxdb.dto.BatchPoints;
 import org.influxdb.dto.Point;
 import org.influxdb.dto.Pong;
 import org.influxdb.dto.Query;
 import org.influxdb.dto.QueryResult;
-
-import java.util.List;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
-import java.util.function.Consumer;
+import org.influxdb.exception.DeleteInfluxException;
 
 /**
  * Interface with all available methods to access a InfluxDB database.
@@ -103,16 +103,6 @@ public interface InfluxDB {
   public InfluxDB enableBatch(final int actions, final int flushDuration, final TimeUnit flushDurationTimeUnit);
 
   /**
-   * Enable batching of single Point writes as
-   * {@link #enableBatch(int, int, TimeUnit, ThreadFactory, BiConsumer<Iterable<Point>, Throwable>)}
-   * using with a exceptionHandler that does nothing.
-   *
-   * @see #enableBatch(int, int, TimeUnit, ThreadFactory, BiConsumer<Iterable<Point>, Throwable>)
-   */
-  public InfluxDB enableBatch(final int actions, final int flushDuration, final TimeUnit flushDurationTimeUnit,
-                              final ThreadFactory threadFactory);
-
-  /**
    * Enable batching of single Point writes to speed up writes significant. If either actions or
    * flushDurations is reached first, a batch write is issued.
    * Note that batch processing needs to be explicitly stopped before the application is shutdown.
@@ -124,13 +114,10 @@ public interface InfluxDB {
    *            the time to wait at most.
    * @param flushDurationTimeUnit
    * @param threadFactory
-   * @param exceptionHandler
-   *            a consumer function to handle asynchronous errors
    * @return the InfluxDB instance to be able to use it in a fluent manner.
    */
   public InfluxDB enableBatch(final int actions, final int flushDuration, final TimeUnit flushDurationTimeUnit,
-                              final ThreadFactory threadFactory,
-                              final BiConsumer<Iterable<Point>, Throwable> exceptionHandler);
+                              final ThreadFactory threadFactory);
 
   /**
    * Disable Batching.
@@ -178,6 +165,57 @@ public interface InfluxDB {
    */
   public void write(final int udpPort, final Point point);
 
+  void dropMeasurement(String database, String measurement) throws DeleteInfluxException;
+
+  /**
+   *
+   * @param database - name database
+   * @param point - point for delete by tags
+   * @throws DeleteInfluxException
+   */
+
+void delete(String database, Point point) throws DeleteInfluxException;
+
+  /**
+   * Delete data by time: "WHERE time < now()".
+   *
+   * @param database    - name database
+   * @param measurement - where we will delete data
+   * @throws DeleteInfluxException
+   */
+void deleteOld(String database, String measurement) throws DeleteInfluxException;
+
+  /**
+   * Delete data by time: "WHERE time < date".
+   *
+   * @param database    - name database
+   * @param measurement - where we will delete data
+   * @param date        - where we will delete data
+   * @throws DeleteInfluxException
+   */
+void deleteBeforeDate(String database, String measurement, long date) throws DeleteInfluxException;
+
+  /**
+   * Delete data by time: "WHERE time > date".
+   *
+   * @param database    - name database
+   * @param measurement - where we will delete data
+   * @param date        - where we will delete data
+   * @throws DeleteInfluxException
+   */
+void deleteAfterDate(String database, String measurement, long date) throws DeleteInfluxException;
+
+/**
+ * Delete data by time: "WHERE time > date".
+ *
+ * @param database    - name database
+ * @param measurement - where we will delete data
+ * @param date        - where we will delete data
+ * @throws DeleteInfluxException
+ */
+void deleteBetweenDate(String database, String measurement, String did, long startDate, long endDate)
+         throws DeleteInfluxException;
+
   /**
    * Write a set of Points to the influxdb database with the new (>= 0.9.0rc32) lineprotocol.
    *
@@ -185,7 +223,7 @@ public interface InfluxDB {
    *
    * @param batchPoints
    */
-  public void write(final BatchPoints batchPoints);
+public void write(final BatchPoints batchPoints);
 
   /**
    * Write a set of Points to the influxdb database with the string records.
@@ -233,18 +271,6 @@ public interface InfluxDB {
   public QueryResult query(final Query query);
 
   /**
-   * Execute a streaming query against a database.
-   *
-   * @param query
-   *            the query to execute.
-   * @param chunkSize
-   *            the number of QueryResults to process in one chunk.
-   * @param consumer
-   *            the consumer to invoke for each received QueryResult
-   */
-    public void query(Query query, int chunkSize, Consumer<QueryResult> consumer);
-
-  /**
    * Execute a query against a database.
    *
    * @param query
@@ -276,24 +302,6 @@ public interface InfluxDB {
    * @return a List of all Database names.
    */
   public List<String> describeDatabases();
-
-  /**
-   * Check if a database exists.
-   *
-   * @param name
-   *            the name of the database to search.
-   *
-   * @return true if the database exists or false if it doesn't exist
-   */
-  public boolean databaseExists(final String name);
-
-  /**
-   * Send any buffered points to InfluxDB. This method is synchronous and will block while all pending points are
-   * written.
-   *
-   * @throws IllegalStateException if batching is not enabled.
-   */
-  public void flush();
 
   /**
    * close thread for asynchronous batch write and UDP socket to release resources if need.

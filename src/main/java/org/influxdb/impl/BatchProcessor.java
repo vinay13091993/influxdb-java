@@ -10,7 +10,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
-import java.util.function.BiConsumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -31,9 +30,8 @@ import com.google.common.collect.Maps;
 public class BatchProcessor {
 
   private static final Logger LOG = Logger.getLogger(BatchProcessor.class.getName());
-  protected final BlockingQueue<AbstractBatchEntry> queue;
+  protected final BlockingQueue<AbstractBatchEntry> queue = new LinkedBlockingQueue<>();
   private final ScheduledExecutorService scheduler;
-  private final BiConsumer<Iterable<Point>, Throwable> exceptionHandler;
   final InfluxDBImpl influxDB;
   final int actions;
   private final TimeUnit flushIntervalUnit;
@@ -48,7 +46,6 @@ public class BatchProcessor {
     private int actions;
     private TimeUnit flushIntervalUnit;
     private int flushInterval;
-    private BiConsumer<Iterable<Point>, Throwable> exceptionHandler = (entries, throwable) -> { };
 
     /**
      * @param threadFactory
@@ -96,19 +93,6 @@ public class BatchProcessor {
     }
 
     /**
-     * A callback to be used when an error occurs during a batchwrite.
-     *
-     * @param handler
-     *            the handler
-     *
-     * @return this Builder to use it fluent
-     */
-    public Builder exceptionHandler(final BiConsumer<Iterable<Point>, Throwable> handler) {
-      this.exceptionHandler = handler;
-      return this;
-    }
-
-    /**
      * Create the BatchProcessor.
      *
      * @return the BatchProcessor instance.
@@ -119,9 +103,8 @@ public class BatchProcessor {
       Preconditions.checkArgument(this.flushInterval > 0, "flushInterval should > 0");
       Preconditions.checkNotNull(this.flushIntervalUnit, "flushIntervalUnit may not be null");
       Preconditions.checkNotNull(this.threadFactory, "threadFactory may not be null");
-      Preconditions.checkNotNull(this.exceptionHandler, "exceptionHandler may not be null");
       return new BatchProcessor(this.influxDB, this.threadFactory, this.actions, this.flushIntervalUnit,
-                                this.flushInterval, exceptionHandler);
+                                this.flushInterval);
     }
   }
 
@@ -181,20 +164,13 @@ public class BatchProcessor {
   }
 
   BatchProcessor(final InfluxDBImpl influxDB, final ThreadFactory threadFactory, final int actions,
-                 final TimeUnit flushIntervalUnit, final int flushInterval,
-                 final BiConsumer<Iterable<Point>, Throwable> exceptionHandler) {
+                 final TimeUnit flushIntervalUnit, final int flushInterval) {
     super();
     this.influxDB = influxDB;
     this.actions = actions;
     this.flushIntervalUnit = flushIntervalUnit;
     this.flushInterval = flushInterval;
     this.scheduler = Executors.newSingleThreadScheduledExecutor(threadFactory);
-    this.exceptionHandler = exceptionHandler;
-    if (actions > 1 && actions < Integer.MAX_VALUE) {
-        this.queue = new LinkedBlockingQueue<>(actions);
-    } else {
-        this.queue = new LinkedBlockingQueue<>();
-    }
     // Flush at specified Rate
     this.scheduler.scheduleAtFixedRate(new Runnable() {
       @Override
@@ -206,7 +182,6 @@ public class BatchProcessor {
   }
 
   void write() {
-    List<Point> currentBatch = null;
     try {
       if (this.queue.isEmpty()) {
         return;
@@ -217,11 +192,9 @@ public class BatchProcessor {
       Map<Integer, List<String>> udpPortToBatchPoints = Maps.newHashMap();
       List<AbstractBatchEntry> batchEntries = new ArrayList<>(this.queue.size());
       this.queue.drainTo(batchEntries);
-      currentBatch = new ArrayList<>(batchEntries.size());
 
       for (AbstractBatchEntry batchEntry : batchEntries) {
         Point point = batchEntry.getPoint();
-        currentBatch.add(point);
         if (batchEntry instanceof HttpBatchEntry) {
             HttpBatchEntry httpBatchEntry = HttpBatchEntry.class.cast(batchEntry);
             String dbName = httpBatchEntry.getDb();
@@ -254,7 +227,6 @@ public class BatchProcessor {
       }
     } catch (Throwable t) {
       // any exception wouldn't stop the scheduler
-      exceptionHandler.accept(currentBatch, t);
       LOG.log(Level.SEVERE, "Batch could not be sent. Data will be lost", t);
     }
   }
@@ -266,11 +238,7 @@ public class BatchProcessor {
    *            the batchEntry to write to the cache.
    */
   void put(final AbstractBatchEntry batchEntry) {
-    try {
-        this.queue.put(batchEntry);
-    } catch (InterruptedException e) {
-        throw new RuntimeException(e);
-    }
+    this.queue.add(batchEntry);
     if (this.queue.size() >= this.actions) {
       this.scheduler.submit(new Runnable() {
         @Override
@@ -286,15 +254,9 @@ public class BatchProcessor {
    * called if no batch processing is needed anymore.
    *
    */
-  void flushAndShutdown() {
+  void flush() {
     this.write();
     this.scheduler.shutdown();
   }
 
-  /**
-   * Flush the current open writes to InfluxDB. This will block until all pending points are written.
-   */
-  void flush() {
-    this.write();
-  }
 }
